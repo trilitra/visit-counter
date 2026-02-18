@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
@@ -32,6 +33,12 @@ type healthResponse struct {
 type handler struct {
 	store Store
 }
+
+const (
+	readTimeout  = 5 * time.Second
+	writeTimeout = 10 * time.Second
+	idleTimeout  = 60 * time.Second
+)
 
 func main() {
 	err := godotenv.Load()
@@ -60,7 +67,16 @@ func main() {
 
 	r.Get("/stats", h.handleStats)
 
-	if err = http.ListenAndServe(":"+port, r); err != nil {
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      r,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		IdleTimeout:  idleTimeout,
+	}
+
+	err = srv.ListenAndServe()
+	if err != nil {
 		slog.Error("Error starting server:", "err", err)
 		os.Exit(1)
 	}
@@ -85,8 +101,9 @@ func NewStore() Store {
 			DB:       0,
 		})
 
-		if err := rdb.Ping(context.Background()).Err(); err != nil {
-			slog.Error("redis connection failed: %v", "err", err)
+		err := rdb.Ping(context.Background()).Err()
+		if err != nil {
+			slog.Error("Redis connection failed", "err", err)
 		}
 
 		return NewRedisStore(rdb)
